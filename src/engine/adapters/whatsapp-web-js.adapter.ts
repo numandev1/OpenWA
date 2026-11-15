@@ -36,6 +36,18 @@ import {
   GroupCreateResult,
 } from '../types/whatsapp-web-js.types';
 
+/**
+ * whatsapp-web.js can deliver a message but resolve sendMessage() with undefined after
+ * WhatsApp Web updates. The send succeeded, so report it without an id instead of throwing
+ * (a thrown error makes callers retry and the recipient gets duplicates).
+ */
+function sentResult(msg: { id?: { _serialized?: string }; timestamp?: number } | undefined | null): MessageResult {
+  return {
+    id: msg?.id?._serialized ?? '',
+    timestamp: msg?.timestamp ?? Math.floor(Date.now() / 1000),
+  };
+}
+
 export interface WhatsAppWebJsConfig {
   sessionId: string;
   sessionDataPath: string;
@@ -272,10 +284,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
   async sendTextMessage(chatId: string, text: string): Promise<MessageResult> {
     this.ensureReady();
     const msg = await this.client!.sendMessage(chatId, text);
-    return {
-      id: msg.id._serialized,
-      timestamp: msg.timestamp,
-    };
+    return sentResult(msg);
   }
 
   async sendImageMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
@@ -316,10 +325,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
       caption: media.caption,
     });
 
-    return {
-      id: msg.id._serialized,
-      timestamp: msg.timestamp,
-    };
+    return sentResult(msg);
   }
 
   async getContacts(): Promise<Contact[]> {
@@ -391,10 +397,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
       address: location.address || '',
     });
     const msg = await this.client!.sendMessage(chatId, loc);
-    return {
-      id: msg.id._serialized,
-      timestamp: msg.timestamp,
-    };
+    return sentResult(msg);
   }
 
   async sendContactMessage(chatId: string, contact: ContactCard): Promise<MessageResult> {
@@ -411,10 +414,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
     const msg = await this.client!.sendMessage(chatId, vcard, {
       parseVCards: true,
     });
-    return {
-      id: msg.id._serialized,
-      timestamp: msg.timestamp,
-    };
+    return sentResult(msg);
   }
 
   async sendStickerMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
@@ -434,10 +434,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
     const msg = await this.client!.sendMessage(chatId, messageMedia, {
       sendMediaAsSticker: true,
     });
-    return {
-      id: msg.id._serialized,
-      timestamp: msg.timestamp,
-    };
+    return sentResult(msg);
   }
 
   async replyToMessage(chatId: string, quotedMsgId: string, text: string): Promise<MessageResult> {
@@ -452,10 +449,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
     }
 
     const msg = await quotedMsg.reply(text);
-    return {
-      id: msg.id._serialized,
-      timestamp: msg.timestamp,
-    };
+    return sentResult(msg);
   }
 
   async forwardMessage(fromChatId: string, toChatId: string, messageId: string): Promise<MessageResult> {
