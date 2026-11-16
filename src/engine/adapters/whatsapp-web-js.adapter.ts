@@ -115,6 +115,13 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
       await this.client.initialize();
     } catch (error) {
       this.setStatus(EngineStatus.FAILED);
+      // Close the browser a failed start left behind; otherwise it keeps the session profile
+      // locked and every retry fails. Bounded, because destroy() can hang on a half-loaded page.
+      const client = this.client;
+      this.client = null;
+      if (client) {
+        await Promise.race([client.destroy().catch(() => undefined), new Promise(resolve => setTimeout(resolve, 10000))]);
+      }
       throw error;
     }
   }
@@ -203,7 +210,8 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
     });
 
     this.client.on('message_ack', (msg, ack) => {
-      this.callbacks.onMessageAck?.(msg.id._serialized, ack);
+      const chatId = msg.fromMe ? msg.to : msg.from;
+      this.callbacks.onMessageAck?.(msg.id?._serialized ?? '', ack, chatId);
     });
 
     this.client.on('disconnected', reason => {

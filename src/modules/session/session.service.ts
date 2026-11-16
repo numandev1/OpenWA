@@ -213,7 +213,16 @@ export class SessionService implements OnModuleDestroy, OnModuleInit {
       baseDelay: config?.reconnectBaseDelay ?? 5000,
     });
 
-    await this.initializeEngine(id, session);
+    try {
+      await this.initializeEngine(id, session);
+    } catch (error) {
+      // Unregister the failed engine so the session can be started again
+      // (otherwise every retry is rejected with "Session is already started").
+      this.engines.delete(id);
+      this.cancelReconnect(id);
+      await this.updateStatus(id, SessionStatus.FAILED);
+      throw error;
+    }
     return this.findOne(id);
   }
 
@@ -311,6 +320,13 @@ export class SessionService implements OnModuleDestroy, OnModuleInit {
             // Emit real-time event to WebSocket clients
             this.eventsGateway.emitMessage(id, finalMessage as Record<string, unknown>);
           });
+      },
+      onMessageAck: (messageId: string, ack: number, chatId?: string): void => {
+        // whatsapp-web.js ack levels: -1 error, 0 pending, 1 server, 2 device (delivered), 3 read, 4 played
+        const ackName = ({ [-1]: 'error', 0: 'pending', 1: 'sent', 2: 'delivered', 3: 'read', 4: 'played' } as Record<number, string>)[ack] ?? 'unknown';
+        const data = { messageId, ack, ackName, chatId: chatId ?? null, at: new Date().toISOString() };
+        void this.webhookService.dispatch(id, 'message.ack', data);
+        this.eventsGateway.emitMessageAck(id, { messageId, ack, ackName });
       },
       onDisconnected: (reason: string): void => {
         this.logger.warn(`Session disconnected: ${reason}`, {
